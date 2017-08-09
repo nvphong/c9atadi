@@ -1,0 +1,78 @@
+diff --git a/lib/ace/editor.js b/lib/ace/editor.js
+index b4c961bd54..e9cda81038 100644
+--- a/lib/ace/editor.js
++++ b/lib/ace/editor.js
+@@ -38,6 +38,7 @@ var dom = require("./lib/dom");
+ var lang = require("./lib/lang");
+ var useragent = require("./lib/useragent");
+ var TextInput = require("./keyboard/textinput").TextInput;
++var TextInput_iOS = require("./keyboard/textinput_ios").TextInput;
+ var MouseHandler = require("./mouse/mouse_handler").MouseHandler;
+ var FoldHandler = require("./mouse/fold_handler").FoldHandler;
+ var KeyBinding = require("./keyboard/keybinding").KeyBinding;
+@@ -74,7 +75,13 @@ var Editor = function(renderer, session) {
+     this.renderer = renderer;
+ 
+     this.commands = new CommandManager(useragent.isMac ? "mac" : "win", defaultCommands);
+-    this.textInput  = new TextInput(renderer.getTextAreaContainer(), this);
++    
++    var iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
++    if (iOS) {
++      this.textInput = new TextInput_iOS(renderer.getTextAreaContainer(), this);
++    } else {
++      this.textInput = new TextInput(renderer.getTextAreaContainer(), this);
++    }
+     this.renderer.textarea = this.textInput.getElement();
+     this.keyBinding = new KeyBinding(this);
+
+diff --git a/lib/ace/keyboard/textinput_ios.js b/lib/ace/keyboard/textinput_ios.js
+index ade9fc82ce..69e383448b 100644
+--- a/lib/ace/keyboard/textinput_ios.js
++++ b/lib/ace/keyboard/textinput_ios.js
+@@ -530,16 +530,22 @@ var TextInput = function(parentNode, host) {
+     event.addListener(host.renderer.scroller, "contextmenu", onContextMenu);
+     event.addListener(text, "contextmenu", onContextMenu);
+     
++    
++    var typingResetTimeout = null;
+     var typing = false;
+ 
+     parentNode.addEventListener("keydown", function (e) {
++      if (typingResetTimeout) clearTimeout(typingResetTimeout);
+       typing = true;
+     });
+     
+     parentNode.addEventListener("keyup", function (e) {
+-      typing = false;
++      typingResetTimeout = setTimeout(function () {
++        typing = false;
++      }, 100);
+     });
+     
++    // On iOS, "selectionchange" can only be attached to the document object...
+     document.addEventListener("selectionchange", function (e) {
+       if (document.activeElement !== text) {
+         return;
+
+From 9d98b83e235443e39f4d1ee59d944eaa39051659 Mon Sep 17 00:00:00 2001
+From: Emanuele Tamponi <emanuele.tamponi@gmail.com>
+Date: Wed, 21 Dec 2016 00:58:19 +0000
+Subject: [PATCH 4/5] ios: accept characters that count as two (like emojis)
+
+---
+ lib/ace/keyboard/textinput_ios.js | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/lib/ace/keyboard/textinput_ios.js b/lib/ace/keyboard/textinput_ios.js
+index 69e383448b..d8e8a3efd2 100644
+--- a/lib/ace/keyboard/textinput_ios.js
++++ b/lib/ace/keyboard/textinput_ios.js
+@@ -236,7 +236,7 @@ var TextInput = function(parentNode, host) {
+             if (data.substring(0, 9) == PLACEHOLDER && data.length > PLACEHOLDER.length)
+                 data = data.substr(9);
+             else if (data.substr(0, 4) == PLACEHOLDER.substr(0, 4))
+-                data = data.substr(4, 1);
++                data = data.substr(4, data.length - PLACEHOLDER.length + 1);
+             else if (data.charAt(data.length - 1) == PLACEHOLDER.charAt(0))
+                 data = data.slice(0, -1);
+             // can happen if undo in textarea isn't stopped
